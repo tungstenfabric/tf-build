@@ -147,9 +147,19 @@ def RunUnitTest(env, target, source, timeout = 300):
 
 def TestSuite(env, target, source):
     if len(source):
+        skip_list = []
+        skipfile = GetOption('skip_tests')
+        if skipfile:
+            try:
+                with open(skipfile) as f:
+                    skip_list = f.readlines()
+                skip_list = [test.strip() for test in skip_list]
+            except:
+                pass
         for test in env.Flatten(source):
             # UnitTest() may have tagged tests with skip_run attribute
-            if getattr( test.attributes, 'skip_run', False ): continue
+            if (getattr( test.attributes, 'skip_run', False ) or
+                test.name in skip_list): continue
 
             xml_path = test.abspath + '.xml'
             log_path = test.abspath + '.log'
@@ -1237,6 +1247,7 @@ def SetupBuildEnvironment(conf):
     AddOption('--pytest', dest = 'pytest', action='store')
     AddOption('--without-dpdk', dest = 'without-dpdk',
               action='store_true', default=False)
+    AddOption('--skip-tests', dest = 'skip_tests', action='store')
     AddOption('--describe-tests', dest = 'describe-tests',
               action='store_true', default=False)
     AddOption('--describe-aliases', dest = 'describe-aliases',
