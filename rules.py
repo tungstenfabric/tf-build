@@ -224,9 +224,14 @@ def SetupPyTestSuiteWithDeps(env, sdist_target, *args, **kwargs):
     if 'BUILD_ONLY' in env['ENV']:
         test_cmd = cov_cmd = sdist_target
     else:
-        cmd_str = 'tox' if use_tox else 'python setup.py run_tests'
+        skipfile = GetOption('skip_tests')
+        if skipfile:
+            tox_args = ' -- --blacklist-file ' + skipfile
+        else:
+            tox_args = ''
+        cmd_str = 'tox' + tox_args if use_tox else 'python setup.py run_tests'
         test_cmd = env.Command('test.log', sdist_target, cmd_base % (cmd_str, "test"))
-        cmd_str += ' -e cover' if use_tox else ' --coverage'
+        cmd_str = 'tox -e cover' + tox_args if use_tox else ' --coverage'
         cov_cmd = env.Command('coveragetest.log', sdist_target, cmd_base % (cmd_str, 'coveragetest'))
 
     # If *args is not empty, move all arguments to kwargs['sdist_depends']
@@ -360,7 +365,21 @@ def venv_add_build_pkg(env, v, pkg):
 def PyTestSuite(env, target, source, venv=None):
     if 'BUILD_ONLY' in env['ENV']:
         return target
+
+    skip_list = []
+    skip_file_path = GetOption('skip_tests')
+    if skip_file_path:
+        try:
+            with open(skip_file_path) as skip_file:
+                skip_list = skip_file.readlines()
+            skip_list = [test.strip() for test in skip_list]
+        except:
+            pass
+
     for test in source:
+        if test.name in skip_list:
+            continue
+
         log = test + '.log'
         if venv:
             try:
@@ -1053,7 +1072,19 @@ def VerifyClVersion():
     return our_cl_version >= minimum_cl_version
 
 def PyTestSuiteCov(target, source, env):
+    skip_list = []
+    skip_file_path = GetOption('skip_tests')
+    if skip_file_path:
+        try:
+            with open(skip_file_path) as skip_file:
+                skip_list = skip_file.readlines()
+            skip_list = [test.strip() for test in skip_list]
+        except:
+            pass
+            
     for test in source:
+        if test.name in skip_list:
+            continue
         log = test.name + '.log'
         if env['env_venv']:
             venv = env['env_venv']
