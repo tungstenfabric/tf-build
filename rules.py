@@ -11,8 +11,7 @@ from SCons.Errors import convert_to_BuildError, BuildError
 from SCons.Script import AddOption, GetOption, SetOption
 from SCons.Node import Alias
 from distutils.spawn import find_executable
-from distutils.version import LooseVersion, StrictVersion
-import json
+from distutils.version import LooseVersion
 import SCons.Util
 import subprocess
 import sys
@@ -22,6 +21,8 @@ import getpass
 import warnings
 import errno
 import shlex
+import six
+
 
 def GetPlatformInfo(env):
     '''
@@ -29,37 +30,43 @@ def GetPlatformInfo(env):
     '''
     GetPlatformInfo.__dict__.setdefault('system', None)
     GetPlatformInfo.__dict__.setdefault('distro', None)
-    if not GetPlatformInfo.system: GetPlatformInfo.system = platform.system()
+    if not GetPlatformInfo.system:
+        GetPlatformInfo.system = platform.system()
 
     if not GetPlatformInfo.distro:
         if GetPlatformInfo.system == 'Linux':
             GetPlatformInfo.distro = platform.linux_distribution()
         elif GetPlatformInfo.system == 'Darwin':
-            GetPlatformInfo.distro = ('Darwin','','')
+            GetPlatformInfo.distro = ('Darwin', '', '')
         else:
-            GetPlatformInfo.distro = ('Unknown','','')
+            GetPlatformInfo.distro = ('Unknown', '', '')
 
     return GetPlatformInfo.distro
+
 
 def PlatformExclude(env, **kwargs):
     """
     Return True if platform_excludes list includes a tuple that matches this host/version
     """
-    if 'platform_exclude' not in kwargs: return False
+    if 'platform_exclude' not in kwargs:
+        return False
 
     from distutils.version import LooseVersion
 
     distro = env.GetPlatformInfo()
     this_ver = LooseVersion(distro[1])
 
-    for (p,v) in kwargs['platform_exclude']:
-        if distro[0] != p: continue
+    for (k, v) in kwargs['platform_exclude']:
+        if distro[0] != k:
+            continue
         excl_ver = LooseVersion(v)
-        if this_ver >= excl_ver: return True
+        if this_ver >= excl_ver:
+            return True
     return False
 
+
 def GetTestEnvironment(test):
-    env = { }
+    env = {}
     try:
         with open('controller/ci_unittests.json') as json_file:
             d = json.load(json_file)
@@ -69,11 +76,12 @@ def GetTestEnvironment(test):
                         for tup in e["tuples"]:
                             tokens = tup.split("=")
                             env[tokens[0]] = tokens[1]
-    except:
+    except Exception:
         pass
     return env
 
-def RunUnitTest(env, target, source, timeout = 300):
+
+def RunUnitTest(env, target, source, timeout=300):
     if 'BUILD_ONLY' in env['ENV']:
         return
     import subprocess
@@ -85,9 +93,9 @@ def RunUnitTest(env, target, source, timeout = 300):
     logfile = open(target[0].abspath, 'w')
     #    env['_venv'] = {target: venv}
     tgt = target[0].name
-    if '_venv' in  env and tgt in env['_venv'] and env['_venv'][tgt]:
+    if '_venv' in env and tgt in env['_venv'] and env['_venv'][tgt]:
         cmd = ['/bin/bash', '-c', 'source %s/bin/activate && %s' % (
-                env[env['_venv'][tgt]]._path, test)]
+               env[env['_venv'][tgt]]._path, test)]
     elif env.get('OPT') == 'valgrind':
         cmd = ['valgrind', '--track-origins=yes', '--num-callers=50',
                '--show-possibly-lost=no', '--leak-check=full',
@@ -108,7 +116,7 @@ def RunUnitTest(env, target, source, timeout = 300):
             # Skip HEAPCHECK in CentOS 6.4
             subprocess.check_call("grep -q \"CentOS release 6.4\" /etc/issue 2>/dev/null", shell=True)
             heap_check = False
-        except:
+        except Exception:
             pass
         ShEnv['HEAPCHECK'] = 'normal'
         ShEnv['PPROF_PATH'] = 'build/bin/pprof'
@@ -123,7 +131,7 @@ def RunUnitTest(env, target, source, timeout = 300):
     # 60 second timeout
     for i in range(timeout):
         code = proc.poll()
-        if not code is None:
+        if code is not None:
             break
         time.sleep(1)
 
@@ -145,6 +153,7 @@ def RunUnitTest(env, target, source, timeout = 300):
         print(test + '\033[91m' + " FAIL" + '\033[0m')
         raise convert_to_BuildError(code)
 
+
 def TestSuite(env, target, source):
     if len(source):
         skip_list = []
@@ -158,8 +167,8 @@ def TestSuite(env, target, source):
                 pass
         for test in env.Flatten(source):
             # UnitTest() may have tagged tests with skip_run attribute
-            if (getattr( test.attributes, 'skip_run', False ) or
-                test.name in skip_list): continue
+            if getattr(test.attributes, 'skip_run', False) or test.name in skip_list:
+                continue
 
             xml_path = test.abspath + '.xml'
             log_path = test.abspath + '.log'
@@ -183,15 +192,18 @@ def TestSuite(env, target, source):
                 env.Alias(target, cmd)
         return target
 
+
 def GetVncAPIPkg(env):
-    h,v = env.GetBuildVersion()
+    _, v = env.GetBuildVersion()
     return '/api-lib/dist/contrail-api-client-%s.tar.gz' % v
+
 
 sdist_default_depends = [
     '/config/common/dist/contrail-config-common-0.1dev.tar.gz',
     '/tools/sandesh/library/python/dist/sandesh-0.1dev.tar.gz',
     '/sandesh/common/dist/sandesh-common-0.1dev.tar.gz',
 ]
+
 
 # SetupPyTestSuiteWithDeps
 #
@@ -235,7 +247,7 @@ def SetupPyTestSuiteWithDeps(env, sdist_target, *args, **kwargs):
     if len(args) and 'sdist_depends' in kwargs:
         print("Do not both pass dependencies as *args"
               "and use sdist_depends at the same time.")
-        Exit(1)
+        sys.exit(1)
 
     # during transition we have to support both types of targets
     # as dependencies. This function allows us to mix both SCons targets
@@ -265,14 +277,15 @@ def SetupPyTestSuiteWithDeps(env, sdist_target, *args, **kwargs):
         env.Depends(cov_cmd, full_depends)
 
     d = env.Dir('.').srcnode().path
-    env.Alias( d + ':test', test_cmd )
-    env.Alias( d + ':coverage', cov_cmd )
+    env.Alias(d + ':test', test_cmd)
+    env.Alias(d + ':coverage', cov_cmd)
     # env.Depends('test', test_cmd) # XXX This may need to be restored
     env.Depends('coverage', cov_cmd)
 
     xml_path = env.Dir(".").abspath + "/test-results.xml"
     log_path = env.Dir(".").abspath + "/test.log"
     env.tests.add_test(node_path=log_path, xml_path=xml_path, log_path=log_path)
+
 
 # SetupPyTestSuite()
 #
@@ -281,26 +294,30 @@ def SetupPyTestSuiteWithDeps(env, sdist_target, *args, **kwargs):
 # additional arguments in *args are *additional* dependencies
 #
 def SetupPyTestSuite(env, sdist_target, *args, **kwargs):
-    sdist_depends = sdist_default_depends + [ env.GetVncAPIPkg() ]
-    if len(args): sdist_depends += args
+    sdist_depends = sdist_default_depends + [env.GetVncAPIPkg()]
+    if len(args):
+        sdist_depends += args
 
     env.SetupPyTestSuiteWithDeps(sdist_target,
                                  sdist_depends=sdist_depends, **kwargs)
+
 
 def setup_venv(env, target, venv_name, path=None, is_py3=False):
     p = path
     if not p:
         ws_link = os.environ.get('CONTRAIL_REPO')
-        if ws_link: p = ws_link + "/build/" + env['OPT']
-        else: p = env.Dir(env['TOP']).abspath
+        if ws_link:
+            p = ws_link + "/build/" + env['OPT']
+        else:
+            p = env.Dir(env['TOP']).abspath
 
     tdir = '/tmp/cache/%s/systemless_test' % getpass.getuser()
-    shell_cmd = ' && '.join ([
+    shell_cmd = ' && '.join([
         'cd %s' % p,
         'mkdir -p %s' % tdir,
-        '[ -f %s/ez_setup-0.9.tar.gz ] || curl -o %s/ez_setup-0.9.tar.gz https://pypi.python.org/packages/source/e/ez_setup/ez_setup-0.9.tar.gz' % (tdir,tdir),
+        '[ -f %s/ez_setup-0.9.tar.gz ] || curl -o %s/ez_setup-0.9.tar.gz https://pypi.python.org/packages/source/e/ez_setup/ez_setup-0.9.tar.gz' % (tdir, tdir),
         '[ -d ez_setup-0.9 ] || tar xzf %s/ez_setup-0.9.tar.gz' % tdir,
-        '[ -f %s/redis-2.6.13.tar.gz ] || (cd %s && wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/redis/redis-2.6.13.tar.gz)' % (tdir,tdir),
+        '[ -f %s/redis-2.6.13.tar.gz ] || (cd %s && wget https://storage.googleapis.com/google-code-archive-downloads/v2/code.google.com/redis/redis-2.6.13.tar.gz)' % (tdir, tdir),
         '[ -d ../redis-2.6.13 ] || (cd .. && tar xzf %s/redis-2.6.13.tar.gz)' % tdir,
         '[ -f testroot/bin/redis-server ] || ( cd ../redis-2.6.13 && make PREFIX=%s/testroot install)' % p,
         'virtualenv %s',
@@ -311,11 +328,12 @@ def setup_venv(env, target, venv_name, path=None, is_py3=False):
         shell_cmd += ' --python=python3'
 
     for t, v in zip(target, venv_name):
-        cmd = env.Command (v, '', shell_cmd % (v,))
-        env.Alias (t, cmd)
-        cmd._path = '/'.join ([p, v])
+        cmd = env.Command(v, '', shell_cmd % (v,))
+        env.Alias(t, cmd)
+        cmd._path = '/'.join([p, v])
         env[t] = cmd
     return target
+
 
 def venv_add_pip_pkg(env, v, pkg_list):
     venv = env[v[0]]
@@ -334,7 +352,7 @@ def venv_add_pip_pkg(env, v, pkg_list):
     pip = "/bin/bash -c \"source %s/bin/activate 2>/dev/null; pip" % venv._path
     download_cache = ""
     pip_version = subprocess.check_output(
-        "%s --version | awk '{print \$2}'\"" % pip, shell=True).rstrip()
+        "%s --version | awk '{print \$2}'\"" % pip, shell=True).rstrip() # noqa
     if pip_version < LooseVersion("6.0"):
         tdir = '/tmp/cache/%s/systemless_test' % getpass.getuser()
         download_cache = "--download-cache=%s" % (tdir)
@@ -345,17 +363,20 @@ def venv_add_pip_pkg(env, v, pkg_list):
     env.Depends(cmd, venv)
     return cmd
 
+
 def venv_add_build_pkg(env, v, pkg):
     cmd = []
     venv = env[v[0]]
     for p in pkg:
         t = 'build-' + p.replace('/', '_')
-        cmd += env.Command (t, '',
-       '/bin/bash -c "source %s/bin/activate; pushd %s && python setup.py install; popd"' % (
-              venv._path, p))
+        cmd += env.Command(
+            t, '',
+            '/bin/bash -c "source %s/bin/activate; pushd %s && python setup.py install; popd"' % (
+                venv._path, p))
     env.AlwaysBuild(cmd)
     env.Depends(cmd, venv)
     return cmd
+
 
 def PyTestSuite(env, target, source, venv=None):
     if 'BUILD_ONLY' in env['ENV']:
@@ -374,30 +395,35 @@ def PyTestSuite(env, target, source, venv=None):
         env.Alias(target, cmd)
     return target
 
+
 def UnitTest(env, name, sources, **kwargs):
     test_env = env.Clone()
 
     # Do not link with tcmalloc when running under valgrind/coverage env.
     if sys.platform not in ['darwin'] and env.get('OPT') != 'coverage' and \
-           not env['ENV'].has_key('NO_HEAPCHECK') and env.get('OPT') != 'valgrind':
-        test_env.Append(LIBPATH = '#/build/lib')
-        test_env.Append(LIBS = ['tcmalloc'])
+            'NO_HEAPCHECK' not in env['ENV'] and env.get('OPT') != 'valgrind':
+        test_env.Append(LIBPATH='#/build/lib')
+        test_env.Append(LIBS=['tcmalloc'])
     test_exe_list = test_env.Program(name, sources)
     if test_env.PlatformExclude(**kwargs):
-        for t in test_exe_list: t.attributes.skip_run = True
+        for t in test_exe_list:
+            t.attributes.skip_run = True
     return test_exe_list
+
 
 # Returns True if the build is being done by a CI job,
 # by Jenkins, or some other official or automated build
 def IsAutomatedBuild():
     return 'ZUUL_CHANGES' in os.environ or 'BUILD_BRANCH' in os.environ
 
+
 # Return True if we want quiet/short CLI echo for gcc/g++/gld/etc
 # Default is same as IsAutomatedBuild(), but we return
 # false if BUILD_QUIET is set to something that looks like "true"
 def WantQuietOutput():
     v = os.environ.get('BUILD_QUIET', IsAutomatedBuild())
-    return v in [ True, "True", "TRUE", "true", "yes", "1" ]
+    return v in [True, "True", "TRUE", "true", "yes", "1"]
+
 
 # we are not interested in source files for the dependency, but rather
 # to force rebuilds. Pass an empty source to the env.Command, to break
@@ -410,14 +436,15 @@ def GenerateBuildInfoCode(env, target, source, path):
     # if we are running under CI or jenkins-driven CB/OB build,
     # we do NOT want to use AlwaysBuild, as it triggers unnecessary
     # rebuilds.
-    if not IsAutomatedBuild(): env.AlwaysBuild(o)
+    if not IsAutomatedBuild():
+        env.AlwaysBuild(o)
 
     return
+
 
 # If contrail-controller (i.e., #controller/) is present, determine
 # git hash of head and get base version from version.info, else use
 # hard-coded values.
-#
 def GetBuildVersion(env):
     # Fetch git version
     controller_path = env.Dir('#controller').path
@@ -441,6 +468,7 @@ def GetBuildVersion(env):
         base_ver = "3.0"
 
     return git_hash, base_ver
+
 
 def GetBuildInfoData(env, target, source):
     try:
@@ -493,14 +521,14 @@ extern const std::string BuildInfo;
 #include "buildinfo.h"
 
 const std::string BuildInfo = "%(json)s";
-""" % { 'json': jsdata.replace('"', "\\\"") }
+""" % {'json': jsdata.replace('"', "\\\"")}
 
     with open(os.path.join(build_dir, 'buildinfo.h'), 'w') as h_file:
         h_file.write(h_code)
 
     with open(os.path.join(build_dir, 'buildinfo.cc'), 'w') as cc_file:
         cc_file.write(cc_code)
-#end BuildInfoAction
+
 
 def GenerateBuildInfoCCode(env, target, source, path):
     build_dir = path
@@ -512,16 +540,13 @@ def GenerateBuildInfoCCode(env, target, source, path):
  */
 
 const char *ContrailBuildInfo = "%(json)s";
-""" % { 'json': jsdata.replace('"', "\\\"") }
+""" % {'json': jsdata.replace('"', "\\\"")}
 
     with open(os.path.join(build_dir, target[0]), 'w') as c_file:
         c_file.write(c_code)
-#end GenerateBuildInfoCCode
+
 
 def GenerateBuildInfoPyCode(env, target, source, path):
-    import os
-    import subprocess
-
     try:
         build_user = getpass.getuser()
     except KeyError:
@@ -540,16 +565,16 @@ def GenerateBuildInfoPyCode(env, target, source, path):
 
     # build json string containing build information
     build_info = "{\\\"build-info\\\" : [{\\\"build-version\\\" : \\\"" + str(build_version) + "\\\", \\\"build-time\\\" : \\\"" + str(build_time) + "\\\", \\\"build-user\\\" : \\\"" + build_user + "\\\", \\\"build-hostname\\\" : \\\"" + build_host + "\\\", "
-    py_code ="build_info = \""+ build_info + "\";\n"
+    py_code = "build_info = \"" + build_info + "\";\n"
     with open(path + '/buildinfo.py', 'w') as py_file:
         py_file.write(py_code)
 
     return target
 
-#end GenerateBuildInfoPyCode
 
 def Basename(path):
     return path.rsplit('.', 1)[0]
+
 
 # ExtractCpp Method
 def ExtractCppFunc(env, filelist):
@@ -561,7 +586,7 @@ def ExtractCppFunc(env, filelist):
             CppSrcs.append(fname)
     return CppSrcs
 
-# ExtractC Method
+
 def ExtractCFunc(env, filelist):
     CSrcs = []
     for target in filelist:
@@ -571,7 +596,7 @@ def ExtractCFunc(env, filelist):
             CSrcs.append(fname)
     return CSrcs
 
-# ExtractHeader Method
+
 def ExtractHeaderFunc(env, filelist):
     Headers = []
     for target in filelist:
@@ -581,7 +606,7 @@ def ExtractHeaderFunc(env, filelist):
             Headers.append(fname)
     return Headers
 
-# ProtocDesc Methods
+
 def ProtocDescBuilder(target, source, env):
     if not env.Detect('protoc'):
         raise SCons.Errors.StopError(
@@ -605,9 +630,11 @@ def ProtocDescBuilder(target, source, env):
         raise SCons.Errors.StopError(
             'protobuf desc generation failed')
 
+
 def ProtocSconsEnvDescFunc(env):
-    descbuild = Builder(action = ProtocDescBuilder)
-    env.Append(BUILDERS = {'ProtocDesc' : descbuild})
+    descbuild = Builder(action=ProtocDescBuilder)
+    env.Append(BUILDERS={'ProtocDesc': descbuild})
+
 
 def ProtocGenDescFunc(env, file):
     ProtocSconsEnvDescFunc(env)
@@ -616,9 +643,10 @@ def ProtocGenDescFunc(env, file):
     targets = map(lambda suffix: basename + suffix, suffixes)
     return env.ProtocDesc(targets, file)
 
+
 # ProtocCpp Methods
 def ProtocCppBuilder(target, source, env):
-    spath = str(source[0]).rsplit('/',1)[0] + "/"
+    spath = str(source[0]).rsplit('/', 1)[0] + "/"
     if not env.Detect('protoc'):
         raise SCons.Errors.StopError(
             'protoc Compiler not detected on system')
@@ -641,25 +669,27 @@ def ProtocCppBuilder(target, source, env):
         raise SCons.Errors.StopError(
             'protobuf code generation failed')
 
-def ProtocSconsEnvCppFunc(env):
-    cppbuild = Builder(action = ProtocCppBuilder)
-    env.Append(BUILDERS = {'ProtocCpp' : cppbuild})
 
-def ProtocGenCppMapTgtDirFunc(env, file, target_root = ''):
+def ProtocSconsEnvCppFunc(env):
+    cppbuild = Builder(action=ProtocCppBuilder)
+    env.Append(BUILDERS={'ProtocCpp': cppbuild})
+
+
+def ProtocGenCppMapTgtDirFunc(env, file, target_root=''):
     if target_root == '':
         env['PROTOC_MAP_TGT_DIR'] = ''
     else:
         env['PROTOC_MAP_TGT_DIR'] = '/' + target_root
     ProtocSconsEnvCppFunc(env)
-    suffixes = ['.pb.h',
-                '.pb.cc'
-               ]
+    suffixes = ['.pb.h', '.pb.cc']
     basename = Basename(file)
     targets = map(lambda suffix: basename + suffix, suffixes)
     return env.ProtocCpp(targets, file)
 
+
 def ProtocGenCppFunc(env, file):
     return (ProtocGenCppMapTgtDirFunc(env, file, ''))
+
 
 # When doing parallel build, scons will sometimes try to invoke the
 # sandesh compiler while sandesh itself is still being compiled and
@@ -678,31 +708,37 @@ def wait_for_sandesh_install(env):
         with open(os.devnull, "w") as f:
             try:
                 rc = subprocess.call([env['SANDESH'], '-version'], stdout=f, stderr=f)
-            except Exception as e:
+            except Exception:
                 rc = 0
         if (rc != 1):
             print('scons: warning: sandesh -version returned %d, retrying' % rc)
             time.sleep(1)
 
+
 class SandeshWarning(SCons.Warnings.Warning):
     pass
 
+
 class SandeshCodeGeneratorError(SandeshWarning):
     pass
+
 
 # SandeshGenDoc Methods
 def SandeshDocBuilder(target, source, env):
     opath = target[0].dir.path
     wait_for_sandesh_install(env)
-    code = subprocess.call(env['SANDESH'] + ' --gen doc -I controller/src/ -I src/contrail-common -out '
-                           + opath + " " + source[0].path, shell=True)
+    code = subprocess.call(
+        env['SANDESH'] + ' --gen doc -I controller/src/ -I src/contrail-common -out ' +
+        opath + " " + source[0].path, shell=True)
     if code != 0:
         raise SCons.Errors.StopError(SandeshCodeGeneratorError,
                                      'SandeshDoc documentation generation failed')
 
+
 def SandeshSconsEnvDocFunc(env):
-    docbuild = Builder(action = Action(SandeshDocBuilder, 'SandeshDocBuilder $SOURCE -> $TARGETS'))
-    env.Append(BUILDERS = {'SandeshDoc' : docbuild})
+    docbuild = Builder(action=Action(SandeshDocBuilder, 'SandeshDocBuilder $SOURCE -> $TARGETS'))
+    env.Append(BUILDERS={'SandeshDoc': docbuild})
+
 
 def SandeshGenDocFunc(env, filepath, target=''):
     SandeshSconsEnvDocFunc(env)
@@ -745,9 +781,11 @@ def SandeshGenDocFunc(env, filepath, target=''):
     env.Depends(targets, '#build/bin/sandesh' + env['PROGSUFFIX'])
     return env.SandeshDoc(targets, filepath)
 
+
 # SandeshGenOnlyCpp Methods
 def SandeshOnlyCppBuilder(target, source, env):
-    sname = os.path.splitext(source[0].name)[0] # file name w/o .sandesh
+    # file name w/o .sandesh
+    sname = os.path.splitext(source[0].name)[0]
     html_cpp_name = os.path.join(target[0].dir.path, sname + '_html.cpp')
 
     wait_for_sandesh_install(env)
@@ -759,21 +797,24 @@ def SandeshOnlyCppBuilder(target, source, env):
     with open(html_cpp_name, 'a') as html_cpp_file:
         html_cpp_file.write('int ' + sname + '_marker = 0;\n')
 
+
 def SandeshSconsEnvOnlyCppFunc(env):
-    onlycppbuild = Builder(action = Action(SandeshOnlyCppBuilder,'SandeshOnlyCppBuilder $SOURCE -> $TARGETS'))
-    env.Append(BUILDERS = {'SandeshOnlyCpp' : onlycppbuild})
+    onlycppbuild = Builder(action=Action(SandeshOnlyCppBuilder, 'SandeshOnlyCppBuilder $SOURCE -> $TARGETS'))
+    env.Append(BUILDERS={'SandeshOnlyCpp': onlycppbuild})
+
 
 def SandeshGenOnlyCppFunc(env, file, extra_suffixes=[]):
     SandeshSconsEnvOnlyCppFunc(env)
-    suffixes = ['_types.h',
+    suffixes = [
+        '_types.h',
         '_types.cpp',
         '_constants.h',
         '_constants.cpp',
         '_html.cpp']
 
     if extra_suffixes:
-        if isinstance(extra_suffixes, basestring):
-            extra_suffixes = [ extra_suffixes ]
+        if isinstance(extra_suffixes, six.string_types):
+            extra_suffixes = [extra_suffixes]
         suffixes += extra_suffixes
 
     basename = Basename(file)
@@ -781,14 +822,16 @@ def SandeshGenOnlyCppFunc(env, file, extra_suffixes=[]):
     env.Depends(targets, '#build/bin/sandesh' + env['PROGSUFFIX'])
     return env.SandeshOnlyCpp(targets, file)
 
+
 # SandeshGenCpp Methods
 def SandeshCppBuilder(target, source, env):
     opath = target[0].dir.path
     sname = os.path.join(opath, os.path.splitext(source[0].name)[0])
 
     wait_for_sandesh_install(env)
-    code = subprocess.call(env['SANDESH'] + ' --gen cpp --gen html -I controller/src/ -I src/contrail-common -out '
-                           + opath + " " + source[0].path, shell=True)
+    code = subprocess.call(
+        env['SANDESH'] + ' --gen cpp --gen html -I controller/src/ -I src/contrail-common -out ' +
+        opath + " " + source[0].path, shell=True)
     if code != 0:
         raise SCons.Errors.StopError(SandeshCodeGeneratorError,
                                      'SandeshCpp code generation failed')
@@ -810,27 +853,31 @@ def SandeshCppBuilder(target, source, env):
             for line in tfile:
                 cfile.write(line)
 
+
 def SandeshSconsEnvCppFunc(env):
-    cppbuild = Builder(action = Action(SandeshCppBuilder, 'SandeshCppBuilder $SOURCE -> $TARGETS'))
-    env.Append(BUILDERS = {'SandeshCpp' : cppbuild})
+    cppbuild = Builder(action=Action(SandeshCppBuilder, 'SandeshCppBuilder $SOURCE -> $TARGETS'))
+    env.Append(BUILDERS={'SandeshCpp': cppbuild})
+
 
 def SandeshGenCppFunc(env, file, extra_suffixes=[]):
     SandeshSconsEnvCppFunc(env)
-    suffixes = ['_types.h',
+    suffixes = [
+        '_types.h',
         '_types.cpp',
         '_constants.h',
         '_constants.cpp',
         '_html.cpp']
 
     if extra_suffixes:
-        if isinstance(extra_suffixes, basestring):
-            extra_suffixes = [ extra_suffixes ]
+        if isinstance(extra_suffixes, six.string_types):
+            extra_suffixes = [extra_suffixes]
         suffixes += extra_suffixes
 
     basename = Basename(file)
     targets = [basename + suffix for suffix in suffixes]
     env.Depends(targets, '#build/bin/sandesh' + env['PROGSUFFIX'])
     return env.SandeshCpp(targets, file)
+
 
 # SandeshGenC Methods
 def SandeshCBuilder(target, source, env):
@@ -843,9 +890,11 @@ def SandeshCBuilder(target, source, env):
         raise SCons.Errors.StopError(SandeshCodeGeneratorError,
                                      'SandeshC code generation failed')
 
+
 def SandeshSconsEnvCFunc(env):
-    cbuild = Builder(action = Action(SandeshCBuilder, 'SandeshCBuilder $SOURCE -> $TARGETS'))
-    env.Append(BUILDERS = {'SandeshC' : cbuild})
+    cbuild = Builder(action=Action(SandeshCBuilder, 'SandeshCBuilder $SOURCE -> $TARGETS'))
+    env.Append(BUILDERS={'SandeshC': cbuild})
+
 
 def SandeshGenCFunc(env, file):
     SandeshSconsEnvCFunc(env)
@@ -854,6 +903,7 @@ def SandeshGenCFunc(env, file):
     targets = ['gen-c/' + basename + suffix for suffix in suffixes]
     env.Depends(targets, '#build/bin/sandesh' + env['PROGSUFFIX'])
     return env.SandeshC(targets, file)
+
 
 # SandeshGenPy Methods
 def SandeshPyBuilder(target, source, env):
@@ -871,9 +921,11 @@ def SandeshPyBuilder(target, source, env):
         raise SCons.Errors.StopError(SandeshCodeGeneratorError,
                                      'SandeshPy html generation failed')
 
+
 def SandeshSconsEnvPyFunc(env):
-    pybuild = Builder(action = Action(SandeshPyBuilder,'SandeshPyBuilder $SOURCE -> $TARGETS'))
-    env.Append(BUILDERS = {'SandeshPy' : pybuild})
+    pybuild = Builder(action=Action(SandeshPyBuilder, 'SandeshPyBuilder $SOURCE -> $TARGETS'))
+    env.Append(BUILDERS={'SandeshPy': pybuild})
+
 
 def SandeshGenPyFunc(env, path, target='', gen_py=True):
     SandeshSconsEnvPyFunc(env)
@@ -883,7 +935,7 @@ def SandeshGenPyFunc(env, path, target='', gen_py=True):
         'ttypes.py',
         'http_request.py']
     basename = Basename(path)
-    path_split = basename.rsplit('/',1)
+    path_split = basename.rsplit('/', 1)
     if len(path_split) == 2:
         mod_dir = path_split[1] + '/'
     else:
@@ -895,6 +947,7 @@ def SandeshGenPyFunc(env, path, target='', gen_py=True):
 
     env.Depends(targets, '#build/bin/sandesh' + env['PROGSUFFIX'])
     return env.SandeshPy(targets, path)
+
 
 # Golang Methods for CNI
 def GoCniFunc(env, filepath, target=''):
@@ -908,16 +961,20 @@ def GoCniFunc(env, filepath, target=''):
     try:
         cmd = 'cd ' + cni_path + ';'
         cmd += go_cmd + 'install'
-        code = subprocess.call(cmd, shell=True, env=goenv)
+        _ = subprocess.call(cmd, shell=True, env=goenv)
     except Exception as e:
         print(str(e))
     return env['TOP'] + '/container/cni/bin/' + filepath
 
+
 # ThriftGenCpp Methods
 ThriftServiceRe = re.compile(r'service\s+(\S+)\s*{', re.M)
+
+
 def ThriftServicesFunc(node):
     contents = node.get_text_contents()
     return ThriftServiceRe.findall(contents)
+
 
 def ThriftSconsEnvFunc(env, asynch):
     opath = env.Dir('.').abspath
@@ -926,8 +983,9 @@ def ThriftSconsEnvFunc(env, asynch):
         lstr = thriftcmd + ' --gen cpp:async -o ' + opath + ' $SOURCE'
     else:
         lstr = thriftcmd + ' --gen cpp -o ' + opath + ' $SOURCE'
-    cppbuild = Builder(action = lstr)
-    env.Append(BUILDERS = {'ThriftCpp' : cppbuild})
+    cppbuild = Builder(action=lstr)
+    env.Append(BUILDERS={'ThriftCpp': cppbuild})
+
 
 def ThriftGenCppFunc(env, file, asynch):
     ThriftSconsEnvFunc(env, asynch)
@@ -941,14 +999,17 @@ def ThriftGenCppFunc(env, file, asynch):
     env.Depends(targets, '#build/bin/thrift' + env['PROGSUFFIX'])
     return env.ThriftCpp(targets, file)
 
+
 def ThriftPyBuilder(source, target, env, for_signature):
     output_dir = os.path.dirname(os.path.dirname(str(target[0])))
     return ('%s --gen py:new_style,utf8strings -I src/ -out %s %s' %
             (os.path.join(env.Dir(env['TOP_BIN']).abspath, 'thrift'), output_dir, source[0]))
 
+
 def ThriftSconsEnvPyFunc(env):
-    pybuild = Builder(generator = ThriftPyBuilder)
-    env.Append(BUILDERS = {'ThriftPy' : pybuild})
+    pybuild = Builder(generator=ThriftPyBuilder)
+    env.Append(BUILDERS={'ThriftPy': pybuild})
+
 
 def ThriftGenPyFunc(env, path, target=''):
     modules = [
@@ -967,9 +1028,11 @@ def ThriftGenPyFunc(env, path, target=''):
     env.Depends(targets, '#build/bin/thrift' + env['PROGSUFFIX'])
     return env.ThriftPy(targets, path)
 
+
 def IFMapBuilderCmd(source, target, env, for_signature):
     output = Basename(source[0].abspath)
     return '%s -f -g ifmap-backend -o %s %s' % (env.File('#src/contrail-api-client/generateds/generateDS.py').abspath, output, source[0])
+
 
 def IFMapTargetGen(target, source, env):
     suffixes = ['_types.h', '_types.cc', '_parser.cc',
@@ -978,15 +1041,18 @@ def IFMapTargetGen(target, source, env):
     targets = [basename + x for x in suffixes]
     return targets, source
 
+
 def CreateIFMapBuilder(env):
-    builder = Builder(generator = IFMapBuilderCmd,
-                      src_suffix = '.xsd',
-                      emitter = IFMapTargetGen)
-    env.Append(BUILDERS = { 'IFMapAutogen' : builder})
+    builder = Builder(generator=IFMapBuilderCmd,
+                      src_suffix='.xsd',
+                      emitter=IFMapTargetGen)
+    env.Append(BUILDERS={'IFMapAutogen': builder})
+
 
 def DeviceAPIBuilderCmd(source, target, env, for_signature):
     output = Basename(source[0].abspath)
     return './src/contrail-api-client/generateds/generateDS.py -f -g device-api -o %s %s' % (output, source[0])
+
 
 def DeviceAPITargetGen(target, source, env):
     suffixes = []
@@ -994,14 +1060,17 @@ def DeviceAPITargetGen(target, source, env):
     targets = map(lambda x: basename + x, suffixes)
     return targets, source
 
+
 def CreateDeviceAPIBuilder(env):
-    builder = Builder(generator = DeviceAPIBuilderCmd,
-                      src_suffix = '.xsd')
-    env.Append(BUILDERS = { 'DeviceAPIAutogen' : builder})
+    builder = Builder(generator=DeviceAPIBuilderCmd,
+                      src_suffix='.xsd')
+    env.Append(BUILDERS={'DeviceAPIAutogen': builder})
+
 
 def TypeBuilderCmd(source, target, env, for_signature):
     output = Basename(source[0].abspath)
     return '%s -f -g type -o %s %s' % (env.File('#src/contrail-api-client/generateds/generateDS.py').abspath, output, source[0])
+
 
 def TypeTargetGen(target, source, env):
     suffixes = ['_types.h', '_types.cc', '_parser.cc']
@@ -1009,22 +1078,23 @@ def TypeTargetGen(target, source, env):
     targets = [basename + x for x in suffixes]
     return targets, source
 
+
 def CreateTypeBuilder(env):
-    builder = Builder(generator = TypeBuilderCmd,
-                      src_suffix = '.xsd',
-                      emitter = TypeTargetGen)
-    env.Append(BUILDERS = { 'TypeAutogen' : builder})
+    builder = Builder(generator=TypeBuilderCmd,
+                      src_suffix='.xsd',
+                      emitter=TypeTargetGen)
+    env.Append(BUILDERS={'TypeAutogen': builder})
+
 
 # Check for unsupported/buggy compilers.
 def CheckBuildConfiguration(conf):
     # gcc 4.7.0 generates buggy code when optimization is turned on.
     opt_level = GetOption('opt')
-    if ((opt_level == 'production' or opt_level == 'profile') and \
-        (conf.env['CC'].endswith("gcc") or conf.env['CC'].endswith("g++"))):
-        if conf.env['CCVERSION'] == "4.7.0":
-            print("Unsupported/Buggy compiler gcc 4.7.0 for building " + \
-                  "optimized binaries")
-            raise convert_to_BuildError(1)
+    if ((opt_level == 'production' or opt_level == 'profile') and
+            (conf.env['CC'].endswith("gcc") or conf.env['CC'].endswith("g++")) and
+            conf.env['CCVERSION'] == "4.7.0"):
+        print("Unsupported/Buggy compiler gcc 4.7.0 for building optimized binaries")
+        raise convert_to_BuildError(1)
     # Specific versions of MS C++ compiler are not supported for
     # "production" build.
     if opt_level == 'production' and conf.env['CC'] == 'cl':
@@ -1033,6 +1103,7 @@ def CheckBuildConfiguration(conf):
                   "optimized binaries")
             raise convert_to_BuildError(1)
     return conf.Finish()
+
 
 def VerifyClVersion():
     # Microsoft C++ 19.00.24210 is known to produce incorrectly working Agent
@@ -1046,11 +1117,12 @@ def VerifyClVersion():
     # Unfortunately there's no better way to check the CL version
     output = subprocess.check_output(['cl.exe'], stderr=subprocess.STDOUT, encoding='ASCII')
     regex_string = "Microsoft \(R\) C/C\+\+ [\s\w]*Version ([0-9]+)\." +\
-                   "([0-9]+)\.([0-9]+)(?:\.([0-9]+))?[\s\w]*"
+                   "([0-9]+)\.([0-9]+)(?:\.([0-9]+))?[\s\w]*" # noqa
     regex_parser = re.compile(regex_string)
     match = regex_parser.match(output)
     our_cl_version = [int(x or 0) for x in (match.groups())]
     return our_cl_version >= minimum_cl_version
+
 
 def PyTestSuiteCov(target, source, env):
     for test in source:
@@ -1064,6 +1136,7 @@ def PyTestSuiteCov(target, source, env):
         logfile = test.path + '.log'
         RunUnitTest(env, [env.File(logfile)], [env.File(test)], 800)
     return None
+
 
 def UseSystemBoost(env):
     """
@@ -1089,6 +1162,7 @@ def UseSystemBoost(env):
         return True
     return False
 
+
 def UseSystemTBB(env):
     """ Return True whenever the compilation uses the built-in version of the
     Thread-Building Block library instead of compiling it.
@@ -1111,6 +1185,7 @@ def UseSystemTBB(env):
         return True
     return False
 
+
 def UseCassandraCql(env):
     """
     Whether to use CQL interface to cassandra
@@ -1131,18 +1206,21 @@ def UseCassandraCql(env):
         return True
     return False
 
+
 def CppDisableExceptions(env):
     if not UseSystemBoost(env):
         env.AppendUnique(CCFLAGS='-fno-exceptions')
+
 
 def CppEnableExceptions(env):
     cflags = env['CCFLAGS']
     if '-fno-exceptions' in cflags:
         cflags.remove('-fno-exceptions')
-        env.Replace(CCFLAGS = cflags)
+        env.Replace(CCFLAGS=cflags)
+
 
 def PlatformDarwin(env):
-    cmd = 'sw_vers | \grep ProductVersion'
+    cmd = 'sw_vers | \grep ProductVersion' # noqa
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stdin=subprocess.PIPE, shell=True)
     ver, stderr = p.communicate()
     ver = ver.rstrip('\n')
@@ -1150,35 +1228,33 @@ def PlatformDarwin(env):
     if float(ver) >= 10.9:
         return
 
-    if not 'SDKROOT' in env['ENV']:
-
+    if 'SDKROOT' not in env['ENV']:
         # Find Mac SDK version.
         sdk = '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX' + ver + '.sdk'
         env['ENV']['SDKROOT'] = sdk
 
-    if not 'DEVELOPER_BIN_DIR' in env['ENV']:
+    if 'DEVELOPER_BIN_DIR' not in env['ENV']:
         env['ENV']['DEVELOPER_BIN_DIR'] = '/Applications/Xcode.app/Contents/Developer/usr/bin'
 
     env.AppendENVPath('PATH', env['ENV']['DEVELOPER_BIN_DIR'])
 
-    if not 'DT_TOOLCHAIN_DIR' in env['ENV']:
+    if 'DT_TOOLCHAIN_DIR' not in env['ENV']:
         env['ENV']['DT_TOOLCHAIN_DIR'] = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain'
 
     env.AppendENVPath('PATH', env['ENV']['DT_TOOLCHAIN_DIR'] + '/usr/bin')
 
     env['CXX'] = 'clang++'
-    env.Append(CPPPATH = [env['ENV']['SDKROOT'] + '/usr/include',
-#                         env['ENV']['SDKROOT'] + '/usr/include/c++/v1',
-                          env['ENV']['SDKROOT'] + '/usr/include/c++/4.2.1',
-                          ])
-#   env.Append(LIBPATH = env['ENV']['SDKROOT'] + '/usr/lib')
-#   env.Append(LIBS = 'c++.1')
+    env.Append(CPPPATH=[env['ENV']['SDKROOT'] + '/usr/include',
+                        env['ENV']['SDKROOT'] + '/usr/include/c++/4.2.1',
+                        ])
+
 
 def build_maven(env, target, source, path):
     mvn_target = env.Command(target, source, 'cd ' + str(path) + ' && mvn install')
     env.AlwaysBuild(mvn_target)
     env.Default(mvn_target)
     return mvn_target
+
 
 # Decide whether to use parallel build, and determine value to use/set.
 # Controlled by environment var CONTRAIL_BUILD_JOBS:
@@ -1188,26 +1264,31 @@ def build_maven(env, target, source, path):
 #        compute a reasonable value based on number of CPU's and load avg
 #
 def determine_job_value():
-    if 'CONTRAIL_BUILD_JOBS' not in os.environ: return 1
+    if 'CONTRAIL_BUILD_JOBS' not in os.environ:
+        return 1
 
     v = os.environ['CONTRAIL_BUILD_JOBS']
-    if v == 'no': return 1
+    if v == 'no':
+        return 1
 
-    try: return int(v)
-    except: pass
+    try:
+        return int(v)
+    except Exception:
+        pass
 
     try:
         import multiprocessing
         ncpu = multiprocessing.cpu_count()
         ncore = ncpu / 2
-    except:
+    except Exception:
         ncore = 1
 
-    (one,five,_) = os.getloadavg()
+    (one, five, _) = os.getloadavg()
     avg_load = int(one + five / 2)
     avail = (ncore - avg_load) * 3 / 2
     print("scons: available jobs = %d" % avail)
     return avail
+
 
 class UnitTestsCollector(object):
     """Unit Test collector and processor
@@ -1221,40 +1302,43 @@ class UnitTestsCollector(object):
         self.tests = []
 
     def add_test(self, node_path, xml_path, log_path):
-        self.tests += [{"node_path": node_path, "xml_path": xml_path,
-		       "log_path": log_path}]
+        self.tests += [{
+            "node_path": node_path, "xml_path": xml_path,
+            "log_path": log_path}]
+
 
 def EnsureBuildDependency(env, dependency):
     if not find_executable(dependency):
         raise BuildError(errstr='The \'{}\' utility was not found in the PATH.'.format(dependency))
 
+
 def SetupBuildEnvironment(conf):
-    AddOption('--optimization', '--opt', dest = 'opt',
+    AddOption('--optimization', '--opt', dest='opt',
               action='store', default='debug',
-              choices = ['debug', 'production', 'coverage', 'profile', 'valgrind'],
+              choices=['debug', 'production', 'coverage', 'profile', 'valgrind'],
               help='optimization level: [debug|production|coverage|profile|valgrind]')
 
-    AddOption('--target', dest = 'target',
+    AddOption('--target', dest='target',
               action='store', default='x86_64',
-              choices = ['i686', 'x86_64', 'armhf'])
+              choices=['i686', 'x86_64', 'armhf'])
 
-    AddOption('--cpu', dest = 'cpu',
-                action='store',
-                choices = ['native', 'hsw', 'snb', 'ivb'])
+    AddOption('--cpu', dest='cpu',
+              action='store',
+              choices=['native', 'hsw', 'snb', 'ivb'])
 
-    AddOption('--root', dest = 'install_root', action='store')
-    AddOption('--prefix', dest = 'install_prefix', action='store')
-    AddOption('--pytest', dest = 'pytest', action='store')
-    AddOption('--without-dpdk', dest = 'without-dpdk',
+    AddOption('--root', dest='install_root', action='store')
+    AddOption('--prefix', dest='install_prefix', action='store')
+    AddOption('--pytest', dest='pytest', action='store')
+    AddOption('--without-dpdk', dest='without-dpdk',
               action='store_true', default=False)
-    AddOption('--skip-tests', dest = 'skip_tests', action='store', default='')
-    AddOption('--describe-tests', dest = 'describe-tests',
+    AddOption('--skip-tests', dest='skip_tests', action='store', default='')
+    AddOption('--describe-tests', dest='describe-tests',
               action='store_true', default=False)
-    AddOption('--describe-aliases', dest = 'describe-aliases',
+    AddOption('--describe-aliases', dest='describe-aliases',
               action='store_true', default=False)
-    AddOption('--c++', '--cpp', '--std', dest = 'cpp_standard',
+    AddOption('--c++', '--cpp', '--std', dest='cpp_standard',
               action='store', default='',
-              choices = ['c++98', 'c++11', 'c++14', 'c++17', 'c++2a'],
+              choices=['c++98', 'c++11', 'c++14', 'c++17', 'c++2a'],
               help='C++ standard[c++98, c++11, c++14, c++17, c++2a]')
 
     env = CheckBuildConfiguration(conf)
@@ -1356,7 +1440,7 @@ def SetupBuildEnvironment(conf):
         env['ENV_SHLIB_PATH'] = 'LD_LIBRARY_PATH'
 
     if env.get('TARGET_MACHINE') == 'i686':
-        env.Append(CCFLAGS = '-march=' + 'i686')
+        env.Append(CCFLAGS='-march=' + 'i686')
     elif env.get('TARGET_MACHINE') == 'armhf' or platform.machine().startswith('arm'):
         env.Append(CCFLAGS=['-DTBB_USE_GCC_BUILTINS=1', '-D__TBB_64BIT_ATOMICS=0'])
 
@@ -1383,53 +1467,53 @@ def SetupBuildEnvironment(conf):
     repo_out, err = proc.communicate()
     repo_lines = repo_out.splitlines()
     repo_list = {}
-    for l in repo_lines:
-        (path,repo) = l.split(" : ")
+    for line in repo_lines:
+        (path, repo) = line.split(" : ")
         repo_list[path] = repo
     env['REPO_PROJECTS'] = repo_list
 
     if env['CPP_STANDARD']:
         stdoption = '-std=' + env['CPP_STANDARD']
-        env.Append(CXXFLAGS = stdoption)
+        env.Append(CXXFLAGS=stdoption)
         if env['CPP_STANDARD'] == 'c++11':
-            env.Append(CXXFLAGS = '-Wno-deprecated')
-            env.Append(CXXFLAGS = '-DBOOST_NO_CXX11_SCOPED_ENUMS')
+            env.Append(CXXFLAGS='-Wno-deprecated')
+            env.Append(CXXFLAGS='-DBOOST_NO_CXX11_SCOPED_ENUMS')
 
     opt_level = env['OPT']
     if opt_level == 'production':
-        env.Append(CCFLAGS = '-O3')
+        env.Append(CCFLAGS='-O3')
         env['TOP'] = '#build/production'
     elif opt_level == 'debug':
-        env.Append(CCFLAGS = ['-O0', '-DDEBUG'])
+        env.Append(CCFLAGS=['-O0', '-DDEBUG'])
         env['TOP'] = '#build/debug'
     elif opt_level == 'profile':
         # Enable profiling through gprof
-        env.Append(CCFLAGS = ['-O3', '-DDEBUG', '-pg'])
-        env.Append(LINKFLAGS = ['-pg'])
+        env.Append(CCFLAGS=['-O3', '-DDEBUG', '-pg'])
+        env.Append(LINKFLAGS=['-pg'])
         env['TOP'] = '#build/profile'
     elif opt_level == 'coverage':
-        env.Append(CCFLAGS = ['-O0', '--coverage'])
+        env.Append(CCFLAGS=['-O0', '--coverage'])
         env['TOP'] = '#build/coverage'
-        env.Append(LIBS = 'gcov')
+        env.Append(LIBS='gcov')
     elif opt_level == 'valgrind':
-        env.Append(CCFLAGS = ['-O0', '-DDEBUG'])
+        env.Append(CCFLAGS=['-O0', '-DDEBUG'])
         env['TOP'] = '#build/valgrind'
 
-    if not "CONTRAIL_COMPILE_WITHOUT_SYMBOLS" in os.environ:
-        env.Append(CCFLAGS = '-g')
-        env.Append(LINKFLAGS = '-g')
+    if "CONTRAIL_COMPILE_WITHOUT_SYMBOLS" not in os.environ:
+        env.Append(CCFLAGS='-g')
+        env.Append(LINKFLAGS='-g')
 
-    env.Append(BUILDERS = {'PyTestSuite': PyTestSuite })
-    env.Append(BUILDERS = {'TestSuite': TestSuite })
-    env.Append(BUILDERS = {'UnitTest': UnitTest})
-    env.Append(BUILDERS = {'GenerateBuildInfoCode': GenerateBuildInfoCode})
-    env.Append(BUILDERS = {'GenerateBuildInfoPyCode': GenerateBuildInfoPyCode})
-    env.Append(BUILDERS = {'GenerateBuildInfoCCode': GenerateBuildInfoCCode})
+    env.Append(BUILDERS={'PyTestSuite': PyTestSuite})
+    env.Append(BUILDERS={'TestSuite': TestSuite})
+    env.Append(BUILDERS={'UnitTest': UnitTest})
+    env.Append(BUILDERS={'GenerateBuildInfoCode': GenerateBuildInfoCode})
+    env.Append(BUILDERS={'GenerateBuildInfoPyCode': GenerateBuildInfoPyCode})
+    env.Append(BUILDERS={'GenerateBuildInfoCCode': GenerateBuildInfoCCode})
 
-    env.Append(BUILDERS = {'setup_venv': setup_venv})
-    env.Append(BUILDERS = {'venv_add_pip_pkg': venv_add_pip_pkg })
-    env.Append(BUILDERS = {'venv_add_build_pkg': venv_add_build_pkg })
-    env.Append(BUILDERS = {'build_maven': build_maven })
+    env.Append(BUILDERS={'setup_venv': setup_venv})
+    env.Append(BUILDERS={'venv_add_pip_pkg': venv_add_pip_pkg})
+    env.Append(BUILDERS={'venv_add_build_pkg': venv_add_build_pkg})
+    env.Append(BUILDERS={'build_maven': build_maven})
 
     # A few methods to enable/support UTs and BUILD_ONLY
     env.AddMethod(GetVncAPIPkg, 'GetVncAPIPkg')
@@ -1461,13 +1545,13 @@ def SetupBuildEnvironment(conf):
     CreateTypeBuilder(env)
     CreateDeviceAPIBuilder(env)
 
-    PyTestSuiteCovBuilder = Builder(action = PyTestSuiteCov)
-    env.Append(BUILDERS = {'PyTestSuiteCov' : PyTestSuiteCovBuilder})
+    PyTestSuiteCovBuilder = Builder(action=PyTestSuiteCov)
+    env.Append(BUILDERS={'PyTestSuiteCov': PyTestSuiteCovBuilder})
 
     # Not used?
-    symlink_builder = Builder(action = "cd ${TARGET.dir} && " +
+    symlink_builder = Builder(action="cd ${TARGET.dir} && " +
                               "ln -s ${SOURCE.file} ${TARGET.file}")
-    env.Append(BUILDERS = {'Symlink': symlink_builder})
+    env.Append(BUILDERS={'Symlink': symlink_builder})
 
     env.AddMethod(UseSystemBoost, "UseSystemBoost")
     env.AddMethod(UseSystemTBB, "UseSystemTBB")
@@ -1476,7 +1560,7 @@ def SetupBuildEnvironment(conf):
     env.AddMethod(CppEnableExceptions, "CppEnableExceptions")
 
     return env
-# SetupBuildEnvironment
+
 
 def resolve_alias_dependencies(env, aliases):
     """Given alias string, return all its leaf dependencies.
@@ -1493,6 +1577,7 @@ def resolve_alias_dependencies(env, aliases):
             else:
                 nodes.add(node)
     return nodes
+
 
 def DescribeTests(env, targets):
     """Given a set of targets, print out JSON Lines encoded tests."""
@@ -1517,6 +1602,7 @@ def DescribeTests(env, targets):
         dangling_node = {"node_path": node_path, "matched": False}
         print(json.dumps(dangling_node))
 
+
 def DescribeAliases():
     print('Available Build Aliases:')
     print('------------------------')
@@ -1540,8 +1626,8 @@ def GoSetupCommon(env, goCommand='', changeWorkingDir=True,
         while retries:
             retries -= 1
             try:
-                print "Trying (%s) attempt(%s of %s)..." % (
-                    goCommand, (max_tries - retries), max_tries)
+                print("Trying (%s) attempt(%s of %s)..." % (
+                      goCommand, (max_tries - retries), max_tries))
                 process = subprocess.Popen(args,
                                            cwd=workingDir,
                                            stdout=subprocess.PIPE,
@@ -1681,9 +1767,9 @@ def SchemaSyncBuilder(target, source, env):
         yaml_schema_status_cmd, shell=True, cwd=yaml_schema_path)
     if output != "":
         dec_str = "#" * 80
-        print ("%s\n\nSchema modified!!!" % dec_str)
-        print ("Please add yaml schema changes in %s/* to your commit\n\n%s" %
-               (yaml_schema_path, dec_str))
+        print("%s\n\nSchema modified!!!" % dec_str)
+        print("Please add yaml schema changes in %s/* to your commit\n\n%s" %
+              (yaml_schema_path, dec_str))
         raise SCons.Errors.StopError(
             "XML and YAML schema's are out of sync!")
 
