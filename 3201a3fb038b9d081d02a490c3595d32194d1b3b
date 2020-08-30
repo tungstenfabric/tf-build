@@ -1,0 +1,27 @@
+{
+  "comments": [
+    {
+      "key": {
+        "uuid": "ce4a766b_9266513e",
+        "filename": "rules.py",
+        "patchSetId": 1
+      },
+      "lineNbr": 234,
+      "author": {
+        "id": 382
+      },
+      "writtenOn": "2020-08-30T06:26:11Z",
+      "side": 1,
+      "message": "looks like else block will create something strange",
+      "range": {
+        "startLine": 234,
+        "startChar": 60,
+        "endLine": 234,
+        "endChar": 73
+      },
+      "revId": "3201a3fb038b9d081d02a490c3595d32194d1b3b",
+      "serverId": "c72cd27d-1743-4a55-84a4-cd13b8400c52",
+      "unresolved": true
+    }
+  ]
+}
