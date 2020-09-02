@@ -159,12 +159,9 @@ def TestSuite(env, target, source):
         skip_list = []
         skipfile = GetOption('skip_tests')
         if skipfile:
-            try:
-                with open(skipfile) as f:
-                    skip_list = f.readlines()
-                skip_list = [test.strip() for test in skip_list]
-            except:
-                pass
+            with open(skipfile) as f: # skipfile exists, checked at startup
+                skip_list = f.readlines()
+            skip_list = [test.strip() for test in skip_list]
         for test in env.Flatten(source):
             # UnitTest() may have tagged tests with skip_run attribute
             if getattr(test.attributes, 'skip_run', False) or test.name in skip_list:
@@ -236,10 +233,19 @@ def SetupPyTestSuiteWithDeps(env, sdist_target, *args, **kwargs):
     if 'BUILD_ONLY' in env['ENV']:
         test_cmd = cov_cmd = sdist_target
     else:
-        cmd_str = 'tox' if use_tox else 'python setup.py run_tests'
-        test_cmd = env.Command('test.log', sdist_target, cmd_base % (cmd_str, "test"))
-        cmd_str += ' -e cover' if use_tox else ' --coverage'
-        cov_cmd = env.Command('coveragetest.log', sdist_target, cmd_base % (cmd_str, 'coveragetest'))
+        skipfile = GetOption('skip_tests')
+        if use_tox:
+            cmd_str = 'tox'
+            cov_args = ' -e cover'
+            if skipfile:
+                tox_args = ' -- --blacklist-file ' + skipfile
+            else:
+                tox_args = ''
+        else:
+            cmd_str = 'python setup.py run_tests'
+            cov_args = ' --coverage'
+        test_cmd = env.Command('test.log', sdist_target, cmd_base % (cmd_str+tox_args, "test"))
+        cov_cmd = env.Command('coveragetest.log', sdist_target, cmd_base % (cmd_str+cov_args, 'coveragetest'))
 
     # If *args is not empty, move all arguments to kwargs['sdist_depends']
     # and issue a warning. Also make sure we are not using old and new method
@@ -1331,7 +1337,7 @@ def SetupBuildEnvironment(conf):
     AddOption('--pytest', dest='pytest', action='store')
     AddOption('--without-dpdk', dest='without-dpdk',
               action='store_true', default=False)
-    AddOption('--skip-tests', dest='skip_tests', action='store', default='')
+    AddOption('--skip-tests', dest='skip_tests', action='store', default=None)
     AddOption('--describe-tests', dest='describe-tests',
               action='store_true', default=False)
     AddOption('--describe-aliases', dest='describe-aliases',
@@ -1346,6 +1352,8 @@ def SetupBuildEnvironment(conf):
     env.AddMethod(PlatformExclude, "PlatformExclude")
     env.AddMethod(GetPlatformInfo, "GetPlatformInfo")
 
+    if not os.path.isfile(GetOption('skip_tests')):
+        SetOption('skip_tests', None)
     # Let's decide how many jobs (-jNN) we should use.
     nj = GetOption('num_jobs')
     if nj == 1:
