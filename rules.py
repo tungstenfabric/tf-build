@@ -236,7 +236,12 @@ def SetupPyTestSuiteWithDeps(env, sdist_target, *args, **kwargs):
     if 'BUILD_ONLY' in env['ENV']:
         test_cmd = cov_cmd = sdist_target
     else:
-        cmd_str = 'tox' if use_tox else 'python setup.py run_tests'
+        skipfile = GetOption('skip_tests')
+        if skipfile:
+            tox_args = ' -- --blacklist-file ' + skipfile
+        else:
+            tox_args = ''
+        cmd_str = 'tox' + tox_args if use_tox else 'python setup.py run_tests'
         test_cmd = env.Command('test.log', sdist_target, cmd_base % (cmd_str, "test"))
         cmd_str += ' -e cover' if use_tox else ' --coverage'
         cov_cmd = env.Command('coveragetest.log', sdist_target, cmd_base % (cmd_str, 'coveragetest'))
