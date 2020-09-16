@@ -155,39 +155,42 @@ def RunUnitTest(env, target, source, timeout=300):
 
 
 def TestSuite(env, target, source):
-    if len(source):
-        skip_list = []
-        skipfile = GetOption('skip_tests')
-        if skipfile:
-            with open(skipfile) as f: # skipfile exists, checked at startup
-                skip_list = f.readlines()
-            skip_list = [test.strip() for test in skip_list]
-        for test in env.Flatten(source):
-            # UnitTest() may have tagged tests with skip_run attribute
-            if getattr(test.attributes, 'skip_run', False) or test.name in skip_list:
-                continue
+    if not len(source):
+        return None
 
-            xml_path = test.abspath + '.xml'
-            log_path = test.abspath + '.log'
-            env.tests.add_test(node_path=log_path, xml_path=xml_path, log_path=log_path)
+    skip_list = []
+    skipfile = GetOption('skip_tests')
+    if skipfile and os.path.isfile(skipfile):
+        with open(skipfile) as f:
+            skip_list = f.readlines()
+        skip_list = [test.strip() for test in skip_list]
 
-            # GTest framework uses environment variables to configure how to write
-            # the test output, with GTEST_OUTPUT variable. Make sure targets
-            # don't share their environments, so that GTEST_OUTPUT is not
-            # overwritten.
-            isolated_env = env['ENV'].copy()
-            isolated_env['GTEST_OUTPUT'] = 'xml:' + xml_path
-            cmd = env.Command(log_path, test, RunUnitTest, ENV=isolated_env)
+    for test in env.Flatten(source):
+        # UnitTest() may have tagged tests with skip_run attribute
+        if getattr(test.attributes, 'skip_run', False) or test.name in skip_list:
+            continue
 
-            # If BUILD_ONLY set, do not alias foo.log target, to avoid
-            # invoking the RunUnitTest() as a no-op (i.e., this avoids
-            # some log clutter)
-            if 'BUILD_ONLY' in env['ENV']:
-                env.Alias(target, test)
-            else:
-                env.AlwaysBuild(cmd)
-                env.Alias(target, cmd)
-        return target
+        xml_path = test.abspath + '.xml'
+        log_path = test.abspath + '.log'
+        env.tests.add_test(node_path=log_path, xml_path=xml_path, log_path=log_path)
+
+        # GTest framework uses environment variables to configure how to write
+        # the test output, with GTEST_OUTPUT variable. Make sure targets
+        # don't share their environments, so that GTEST_OUTPUT is not
+        # overwritten.
+        isolated_env = env['ENV'].copy()
+        isolated_env['GTEST_OUTPUT'] = 'xml:' + xml_path
+        cmd = env.Command(log_path, test, RunUnitTest, ENV=isolated_env)
+
+        # If BUILD_ONLY set, do not alias foo.log target, to avoid
+        # invoking the RunUnitTest() as a no-op (i.e., this avoids
+        # some log clutter)
+        if 'BUILD_ONLY' in env['ENV']:
+            env.Alias(target, test)
+        else:
+            env.AlwaysBuild(cmd)
+            env.Alias(target, cmd)
+    return target
 
 
 def GetVncAPIPkg(env):
@@ -233,19 +236,19 @@ def SetupPyTestSuiteWithDeps(env, sdist_target, *args, **kwargs):
     if 'BUILD_ONLY' in env['ENV']:
         test_cmd = cov_cmd = sdist_target
     else:
-        skipfile = GetOption('skip_tests')
         if use_tox:
-            cmd_str = 'tox'
-            cov_args = ' -e cover'
-            if skipfile:
-                tox_args = ' -- --blacklist-file ' + skipfile
-            else:
-                tox_args = ''
+            test_cmd = 'tox'
+            cov_cmd = test_cmd + ' -e cover'
+            skipfile = GetOption('skip_tests')
+            if skipfile and os.path.isfile(skipfile):
+                test_cmd += ' -- --blacklist-file ' + skipfile
+                cov_cmd += ' -- --blacklist-file ' + skipfile
         else:
-            cmd_str = 'python setup.py run_tests'
-            cov_args = ' --coverage'
-        test_cmd = env.Command('test.log', sdist_target, cmd_base % (cmd_str+tox_args, "test"))
-        cov_cmd = env.Command('coveragetest.log', sdist_target, cmd_base % (cmd_str+cov_args, 'coveragetest'))
+            # NOTE: there is no UT skips in this case. But this case is not used in the code now.
+            test_cmd = 'python setup.py run_tests'
+            cov_cmd = test_cmd + ' --coverage'
+        test_cmd = env.Command('test.log', sdist_target, cmd_base % (test_cmd, "test"))
+        cov_cmd = env.Command('coveragetest.log', sdist_target, cmd_base % (cov_cmd, 'coveragetest'))
 
     # If *args is not empty, move all arguments to kwargs['sdist_depends']
     # and issue a warning. Also make sure we are not using old and new method
@@ -1352,9 +1355,6 @@ def SetupBuildEnvironment(conf):
     env.AddMethod(PlatformExclude, "PlatformExclude")
     env.AddMethod(GetPlatformInfo, "GetPlatformInfo")
 
-    skipfile = GetOption('skip_tests')
-    if skipfile and not os.path.isfile(skipfile):
-        SetOption('skip_tests', None)
     # Let's decide how many jobs (-jNN) we should use.
     nj = GetOption('num_jobs')
     if nj == 1:
